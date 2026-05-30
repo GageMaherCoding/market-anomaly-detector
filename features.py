@@ -33,10 +33,11 @@ def build_features(df: pd.DataFrame, window: int = 20) -> pd.DataFrame:
     df["rolling_mean"] = df["price"].rolling(window, min_periods=3).mean()
     df["rolling_std"]  = df["price"].rolling(window, min_periods=3).std()
 
-    df["z_score"] = (
-        (df["price"] - df["rolling_mean"])
-        / df["rolling_std"].replace(0, 1e-9)
-    )
+    # Baseline excludes the current point so an anomalous price doesn't dampen
+    # its own z-score (avoids look-in leakage).
+    baseline_mean = df["rolling_mean"].shift(1)
+    baseline_std  = df["rolling_std"].shift(1)
+    df["z_score"] = (df["price"] - baseline_mean) / baseline_std.replace(0, 1e-9)
 
     df["high_low_range"] = df["day_high"] - df["day_low"]
 

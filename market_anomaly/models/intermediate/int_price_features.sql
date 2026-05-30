@@ -74,6 +74,19 @@ with_lag as (
             rows between 19 preceding and current row
         )                                               as rolling_count,
 
+        -- baseline for the z-score excludes the current row (no look-in leakage)
+        avg(price) over (
+            partition by ticker
+            order by captured_at
+            rows between 20 preceding and 1 preceding
+        )                                               as baseline_mean,
+
+        stddev(price) over (
+            partition by ticker
+            order by captured_at
+            rows between 20 preceding and 1 preceding
+        )                                               as baseline_std,
+
         row_num
     from with_row_number
 ),
@@ -82,9 +95,9 @@ with_zscore as (
     select
         *,
         case
-            when rolling_20_std > 0
+            when baseline_std > 0
             then round(
-                ((price - rolling_20_mean) / rolling_20_std)::numeric, 4
+                ((price - baseline_mean) / baseline_std)::numeric, 4
             )
             else 0
         end                                             as z_score,

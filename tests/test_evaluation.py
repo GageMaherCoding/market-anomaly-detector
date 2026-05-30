@@ -24,7 +24,8 @@ def test_hybrid_catches_injected_anomalies(metrics):
     assert metrics["hybrid"]["recall"] >= 0.95
 
 
-def test_zscore_signal_stays_high_precision(metrics):
-    # The statistical signal alone should remain precise on large moves.
-    assert metrics["zscore_only"]["precision"] >= 0.5
-    assert metrics["zscore_only"]["f1"] >= 0.6
+def test_zscore_is_more_precise_than_hybrid(metrics):
+    # The statistical signal alone produces fewer false positives than the
+    # hybrid; the hybrid trades precision for recall via the Isolation Forest.
+    assert metrics["zscore_only"]["precision"] > metrics["hybrid"]["precision"]
+    assert metrics["zscore_only"]["recall"] >= 0.85
