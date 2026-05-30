@@ -185,7 +185,7 @@ sources (public.*) → stg_price_snapshots → int_price_features → mart_anoma
 - **Operations** — run the drift job on a real scheduler and route alerts to an
   on-call tool rather than email.
 
-## 13. Future work
+## 13. Stuff for future (?)
 
 - Schedule `dbt run` (CI cron) and repoint Grafana panels at the mart.
 - Gate `@champion` promotion on `evaluate.py` metrics (currently always-promote).
