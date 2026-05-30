@@ -5,15 +5,13 @@ Real-time anomaly detection on live market data. The system streams prices for
 statistical + ML model, and serves the results through a REST API and live
 Grafana dashboards — all continuously, from one `docker compose up`.
 
-> Built as a portfolio project to demonstrate an end-to-end **production ML
-> system**: streaming ingestion, feature engineering, a served + monitored
-> model, experiment tracking, data-quality testing, drift detection, and CI.
-> See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the design — data flow, the detection
+model, MLOps, and trade-offs.
 
 ## Stack
 
 Python · Kafka · PostgreSQL · scikit-learn (Isolation Forest) · FastAPI ·
-dbt · MLflow · Grafana · Docker Compose · GitHub Actions
+dbt · MLflow · Grafana · Docker Compose 
 
 ## Results
 
@@ -23,13 +21,12 @@ detector):
 
 | configuration | precision | recall | F1 |
 |---|---|---|---|
-| z-score only | 0.69 | 0.92 | 0.79 |
+| z-score only | 0.39 | 0.97 | 0.56 |
 | hybrid (z-score + Isolation Forest) | 0.18 | 1.00 | 0.31 |
 
-The statistical signal alone is high-precision on large moves; the hybrid trades
-precision for perfect recall via the Isolation Forest's broader (noisier)
-coverage. Metrics are logged to MLflow and gated in CI so quality can't silently
-regress.
+The statistical signal alone is the more precise of the two; the hybrid trades
+precision for perfect recall via the Isolation Forest's broader, noisier
+coverage. Metrics are logged to MLflow and gated in CI against regression.
 
 ## Quickstart
 
@@ -60,19 +57,6 @@ docker compose logs detector --tail 10      # per-ticker scoring
 curl http://localhost:8080/health
 ```
 
-## Services
-
-| Service | What it does |
-|---|---|
-| `producer` | Fetches prices from yfinance → Kafka |
-| `consumer` | Kafka → `price_snapshots` in Postgres |
-| `detector` | Scores each ticker every 60s → `predictions` / `price_movements` |
-| `drift` | Hourly PSI drift check over the feature distribution |
-| `api` | FastAPI read API |
-| `mlflow` | Tracking server + model registry |
-| `grafana` | Dashboards (provisioned from `grafana/`) |
-| `postgres` / `kafka` / `zookeeper` | Infrastructure |
-
 ## Local development (without Docker for the Python parts)
 
 ```powershell
@@ -85,7 +69,8 @@ The Python tools read connection settings from `.env` (see `.env.example`) and
 default to `localhost`, so they work against the Dockerized Postgres/Kafka/MLflow.
 
 ```bash
-python train.py            # train + log a model to MLflow
+python train.py            # train + register a model (promoted to @champion)
+python evaluate.py         # score on a labeled benchmark, log metrics to MLflow
 python drift_detector.py   # one-off drift check
 ```
 
@@ -118,7 +103,7 @@ against a throwaway Postgres.
 ├── price_producer.py / price_consumer.py   # ingestion (Kafka)
 ├── detection_loop.py / detector.py          # scoring + hybrid model
 ├── features.py                              # shared feature engineering
-├── train.py / drift_detector.py             # MLOps: training, drift
+├── train.py / evaluate.py / drift_detector.py  # MLOps: train, evaluate, drift
 ├── api.py                                   # FastAPI service
 ├── config.py / schema.sql                   # config + DB schema
 ├── market_anomaly/                          # dbt project (staging→int→mart)
@@ -147,5 +132,5 @@ see ARCHITECTURE.md §13.)
 
 ## Disclaimer
 
-This detects *unusual* price movements, not their direction. It is a systems /
-ML engineering demonstration, **not** trading advice or a trading signal.
+This detects *unusual* price movements, not their direction, and is **not**
+trading advice or a signal.

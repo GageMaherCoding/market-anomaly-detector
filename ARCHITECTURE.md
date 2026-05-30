@@ -1,16 +1,12 @@
 # Architecture — Market Anomaly Detector
 
-## 1. What it is
+## 1. Overview
 
-A real-time data pipeline that ingests live market prices for 25 equities and
-crypto assets, scores every price movement for statistical anomalies with a
-hybrid ML model, and serves the results through a REST API and live dashboards.
-The whole system runs continuously from a single `docker compose up`.
-
-The point of the project is not to predict the market — it is to demonstrate an
-end-to-end **production ML system**: streaming ingestion, feature engineering, a
-served + monitored model, experiment tracking, data-quality testing, drift
-detection, observability, and CI.
+A real-time pipeline that ingests live prices for 25 equities and crypto assets,
+scores every price movement for statistical anomalies with a hybrid model, and
+serves the results through a REST API and live dashboards. The full stack —
+ingestion, scoring, a versioned and monitored model, analytics, and
+observability — runs continuously from a single `docker compose up`.
 
 ## 2. High-level diagram
 
@@ -168,7 +164,7 @@ sources (public.*) → stg_price_snapshots → int_price_features → mart_anoma
   also keeps MLflow's internal schema out of the application database, which is
   cleaner separation of concerns.
 
-## 11. Known limitations (honest)
+## 11. Known limitations
 
 - **Not a trading signal.** It detects that a move is unusual, not its direction.
   yfinance is delayed and polled at 60s — there is no tradeable edge here.
@@ -178,23 +174,21 @@ sources (public.*) → stg_price_snapshots → int_price_features → mart_anoma
   restart and re-warms from DB history; fine for this scale, not for HA.
 - **Single broker / single node.** No replication or partitioning tuning.
 
-## 12. How this would scale at FAANG scale
+## 12. Scaling considerations
 
-- **Ingestion** — replace the polling producer with a push/websocket feed;
-  partition Kafka topics by ticker; run many consumer instances in the group.
-- **Feature store** — move feature computation to a shared online/offline store
-  (e.g. Feast) so training and serving share definitions and avoid skew.
-- **Serving** — split scoring from the loop into a stateless, autoscaled service
-  reading features from the store; promote models from the MLflow registry
-  behind a champion/challenger setup.
-- **Storage** — partition/shard the snapshot table by time, or move to a
-  columnar/time-series store; the dbt mart becomes incremental.
-- **Ops** — Kubernetes with health/readiness probes, the drift job on a real
-  scheduler (Airflow/cron), and alerts wired to PagerDuty rather than email.
+- **Ingestion** — swap polling for a push/websocket feed, partition Kafka topics
+  by ticker, and run the consumer as a scaled group.
+- **Serving** — split scoring out of the loop into a stateless, autoscaled
+  service reading from a shared feature store (training/serving parity).
+- **Storage** — partition the snapshot table by time (or move to a time-series
+  store) and make the dbt mart incremental.
+- **Operations** — run the drift job on a real scheduler and route alerts to an
+  on-call tool rather than email.
 
 ## 13. Future work
 
 - Schedule `dbt run` (CI cron) and repoint Grafana panels at the mart.
 - Gate `@champion` promotion on `evaluate.py` metrics (currently always-promote).
-- Scale features + tune Isolation Forest contamination to lift hybrid precision.
+- Use returns-based features — price-level z-scores are noisy on trending series.
+- Tune Isolation Forest contamination / scale features to lift hybrid precision.
 - Deploy the API publicly (Render/Cloud Run) for a shareable live URL.

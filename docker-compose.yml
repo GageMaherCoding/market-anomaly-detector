@@ -102,9 +102,8 @@ services:
   drift:
     build: .
     restart: unless-stopped
-    # Re-checks input data drift on a schedule. Hourly here for demonstration;
-    # a production cadence would be daily. Logs PSI per feature and emails on
-    # critical drift when SMTP_* are set in .env.
+    # Re-checks input data drift on a schedule (hourly here; daily in production).
+    # Logs PSI per feature and emails on critical drift when SMTP_* are set.
     command: ["sh", "-c", "while true; do python drift_detector.py; sleep 3600; done"]
     env_file: .env
     environment:

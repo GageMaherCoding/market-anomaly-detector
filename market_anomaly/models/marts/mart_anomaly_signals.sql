@@ -19,16 +19,6 @@ predictions as (
     from {{ source('raw', 'predictions') }}
 ),
 
-movements as (
-    select
-        ticker,
-        detected_at,
-        move_pct::numeric        as move_pct,
-        flagged,
-        z_score::numeric         as movement_z_score
-    from {{ source('raw', 'price_movements') }}
-),
-
 joined as (
     select
         f.snapshot_id,
