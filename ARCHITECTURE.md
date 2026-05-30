@@ -93,9 +93,11 @@ A **two-signal hybrid**, chosen so the system catches both kinds of anomaly:
   deviations from its 20-period rolling mean. Catches sharp, obvious spikes
   immediately, even with little history.
 - **Isolation Forest (unsupervised ML)** — trained on the 7-dimensional feature
-  vector (deltas, rolling stats, range, intra-hour movement count). Catches
-  *multivariate* anomalies a single z-score misses. It warms up after 30 samples
-  per ticker and refits every 50.
+  vector (deltas, rolling stats, range, intra-hour movement count) and served
+  from the MLflow registry. Catches *multivariate* anomalies a single z-score
+  misses; flags using the model's contamination-calibrated decision boundary
+  (`predict() == -1`). On a cold start, before a model is registered, each
+  detector self-fits a per-ticker forest as a fallback.
 
 An observation is anomalous if **either** signal fires. Confidence blends the
 two (`0.6 × z-confidence + 0.4 × iso-confidence`) so a point flagged by both
@@ -109,6 +111,14 @@ instance, so AAPL's volatility profile never contaminates DOGE's.
   registers versioned models under `market-anomaly-iso-forest`. MLflow uses a
   SQLite metadata store and proxied artifact serving, so its state is fully
   isolated from the application database.
+- **Model serving (closed loop)** — `train.py` promotes each new version to the
+  `@champion` alias; `detection_loop.py` loads
+  `models:/market-anomaly-iso-forest@champion` at startup and serves it across
+  all tickers, falling back to an adaptive per-ticker model if no champion is
+  registered yet. Each prediction records the served model version.
+- **Evaluation** — `evaluate.py` scores the detector on a labeled benchmark
+  (injected shocks at known positions) and reports precision/recall/F1 for the
+  statistical-only and hybrid configurations, logged to MLflow and gated in CI.
 - **Drift detection** — `drift_detector.py` computes **PSI** per feature between
   a baseline window and the recent window. PSI ≥ 0.1 warns, ≥ 0.2 is critical
   and triggers an email alert (when SMTP is configured) recommending a retrain.
@@ -185,5 +195,6 @@ sources (public.*) → stg_price_snapshots → int_price_features → mart_anoma
 ## 13. Future work
 
 - Schedule `dbt run` (CI cron) and repoint Grafana panels at the mart.
-- Add backtesting/labeling to measure precision/recall instead of just flag rate.
+- Gate `@champion` promotion on `evaluate.py` metrics (currently always-promote).
+- Scale features + tune Isolation Forest contamination to lift hybrid precision.
 - Deploy the API publicly (Render/Cloud Run) for a shareable live URL.

@@ -15,6 +15,22 @@ Grafana dashboards — all continuously, from one `docker compose up`.
 Python · Kafka · PostgreSQL · scikit-learn (Isolation Forest) · FastAPI ·
 dbt · MLflow · Grafana · Docker Compose · GitHub Actions
 
+## Results
+
+Offline evaluation on a labeled benchmark (`python evaluate.py` — seeded price
+series with injected shocks at known positions, scored through the real
+detector):
+
+| configuration | precision | recall | F1 |
+|---|---|---|---|
+| z-score only | 0.69 | 0.92 | 0.79 |
+| hybrid (z-score + Isolation Forest) | 0.18 | 1.00 | 0.31 |
+
+The statistical signal alone is high-precision on large moves; the hybrid trades
+precision for perfect recall via the Isolation Forest's broader (noisier)
+coverage. Metrics are logged to MLflow and gated in CI so quality can't silently
+regress.
+
 ## Quickstart
 
 Requires Docker Desktop.
