@@ -1,0 +1,127 @@
+{
+  "id": null,
+  "uid": "anomaly-monitor",
+  "title": "Market — Anomaly Monitor",
+  "tags": ["market-anomaly"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Anomalies (range)",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "anomaly_pg" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "anomaly_pg" },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT count(*) AS value FROM public.predictions WHERE is_anomaly AND $__timeFilter(predicted_at)"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Predictions (range)",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "anomaly_pg" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "anomaly_pg" },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT count(*) AS value FROM public.predictions WHERE $__timeFilter(predicted_at)"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Anomaly rate",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "anomaly_pg" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "anomaly_pg" },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT round(100.0 * count(*) FILTER (WHERE is_anomaly) / NULLIF(count(*), 0), 2) AS value FROM public.predictions WHERE $__timeFilter(predicted_at)"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Anomalies per hour",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "anomaly_pg" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "anomaly_pg" },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', predicted_at) AS \"time\", count(*) FILTER (WHERE is_anomaly) AS \"anomalies\" FROM public.predictions WHERE $__timeFilter(predicted_at) GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 70 }, "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false }, "tooltip": { "mode": "single" } }
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Recent flagged predictions",
+      "gridPos": { "h": 11, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "postgres", "uid": "anomaly_pg" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "anomaly_pg" },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT p.predicted_at AS \"time\", s.ticker, s.price, p.z_score, p.confidence, p.model_version FROM public.predictions p LEFT JOIN public.price_snapshots s ON s.id = p.snapshot_id WHERE p.is_anomaly AND $__timeFilter(p.predicted_at) ORDER BY p.predicted_at DESC LIMIT 200"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Flagged price movements",
+      "gridPos": { "h": 11, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "postgres", "uid": "anomaly_pg" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "anomaly_pg" },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "SELECT detected_at AS \"time\", ticker, asset_type, move_pct, z_score, iso_score FROM public.price_movements WHERE $__timeFilter(detected_at) ORDER BY detected_at DESC LIMIT 200"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true }
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+version: 2
+
+sources:
+  - name: raw
+    database: anomalydb
+    schema: public
+    tables:
+      - name: price_snapshots
+        description: "Raw price captures from yfinance every 60 seconds"
+        columns:
+          - name: id
+            description: "UUID primary key"
+            tests:
+              - unique
+              - not_null
+          - name: ticker
+            tests:
+              - not_null
+          - name: price
+            tests:
+              - not_null
+          - name: captured_at
+            tests:
+              - not_null
+
+      - name: predictions
+        description: "Model predictions logged by the detection loop"
+        columns:
+          - name: id
+            tests:
+              - unique
+              - not_null
+
+      - name: price_movements
+        description: "Flagged anomalous movements"
+        columns:
+          - name: id
+            tests:
+              - unique
+              - not_null

@@ -1,0 +1,18 @@
+apiVersion: 1
+
+datasources:
+  - name: AnomalyDB
+    uid: anomaly_pg
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    user: postgres
+    isDefault: true
+    editable: true
+    jsonData:
+      database: anomalydb
+      sslmode: disable
+      postgresVersion: 1500
+      timescaledb: false
+    secureJsonData:
+      password: password

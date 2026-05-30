@@ -1,0 +1,30 @@
+version: 2
+
+models:
+  - name: stg_price_snapshots
+    description: "Cleaned and normalized price snapshots. One row per ticker per capture."
+    columns:
+      - name: snapshot_id
+        description: "UUID from raw table"
+        tests:
+          - unique
+          - not_null
+      - name: ticker
+        description: "Asset ticker symbol e.g. AAPL, BTC-USD"
+        tests:
+          - not_null
+      - name: price
+        description: "Last traded price at capture time"
+        tests:
+          - not_null
+      - name: asset_class
+        description: "equity or crypto"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['equity', 'crypto']
+      - name: captured_at
+        description: "UTC timestamp of capture"
+        tests:
+          - not_null

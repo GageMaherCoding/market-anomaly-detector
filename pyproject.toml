@@ -1,0 +1,19 @@
+[project]
+name = "market-anomaly-detector"
+version = "1.0.0"
+description = "Real-time market price anomaly detection pipeline"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "market_anomaly"]
+
+[tool.ruff.lint]
+# pyflakes (F), pycodestyle errors (E), import sorting (I)
+select = ["E", "F", "I"]
+ignore = ["E501"]  # line length handled by formatter, not enforced
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

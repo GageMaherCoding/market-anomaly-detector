@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+kafka-python
+sqlalchemy
+psycopg2-binary
+pandas
+numpy
+scikit-learn
+mlflow
+requests
+python-dotenv
+ruff
+mypy
+pytest
+httpx
+yfinance

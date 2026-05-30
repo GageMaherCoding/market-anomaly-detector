@@ -1,0 +1,20 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+mlruns/
+*.egg-info/
+.pytest_cache/
+
+# Logs
+logs/
+*.log
+
+# dbt artifacts (defensive; market_anomaly/ also has its own .gitignore)
+target/
+dbt_packages/
+
+# Local tooling / editor config
+.claude/

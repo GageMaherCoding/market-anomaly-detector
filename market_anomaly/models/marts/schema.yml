@@ -1,0 +1,28 @@
+version: 2
+
+models:
+  - name: mart_anomaly_signals
+    description: >
+      Final analytical mart combining price features with model predictions.
+      Materialized as a table for fast Grafana queries.
+      This is the primary table for dashboards and the scoring API.
+    columns:
+      - name: snapshot_id
+        tests:
+          - not_null
+      - name: ticker
+        tests:
+          - not_null
+      - name: asset_class
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['equity', 'crypto']
+      - name: price
+        tests:
+          - not_null
+      - name: is_flagged
+        description: "True if model flagged this snapshot as anomalous"
+        tests:
+          - not_null

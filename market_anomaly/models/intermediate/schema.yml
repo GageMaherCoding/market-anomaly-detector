@@ -1,0 +1,31 @@
+version: 2
+
+models:
+  - name: int_price_features
+    description: >
+      Rolling statistical features per ticker. Computes z-scores,
+      price deltas, and moving averages. This is the feature layer
+      the anomaly detector reads from.
+    columns:
+      - name: snapshot_id
+        tests:
+          - unique
+          - not_null
+      - name: ticker
+        tests:
+          - not_null
+      - name: z_score
+        description: "Standard deviations from 20-period rolling mean"
+        tests:
+          - not_null
+      - name: asset_class
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['equity', 'crypto']
+      - name: short_term_trend
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['above', 'below', 'at']
