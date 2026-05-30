@@ -8,8 +8,12 @@
 # ─────────────────────────────────────────────────────────────
 import json
 import logging
+import os
 import time
 
+import mlflow
+import mlflow.sklearn
+from mlflow import MlflowClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
@@ -20,8 +24,27 @@ from features import build_features, get_ticker_history
 logging.basicConfig(level=cfg.log_level)
 log = logging.getLogger(__name__)
 
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000"))
+MODEL_NAME = "market-anomaly-iso-forest"
+
 ENGINE  = create_engine(cfg.db.url, pool_size=cfg.db.pool_size)
 Session = sessionmaker(bind=ENGINE)
+
+
+def load_champion_model():
+    """Load the @champion model from the MLflow registry.
+
+    Returns (model, version_label). Falls back to (None, 'adaptive-fallback')
+    if no champion is registered yet, so the loop still runs on a cold start.
+    """
+    try:
+        model = mlflow.sklearn.load_model(f"models:/{MODEL_NAME}@champion")
+        mv = MlflowClient().get_model_version_by_alias(MODEL_NAME, "champion")
+        log.info(f"Loaded champion {MODEL_NAME} v{mv.version} from MLflow registry")
+        return model, f"{MODEL_NAME}:v{mv.version}"
+    except Exception as e:
+        log.warning(f"No champion model available ({e}); using adaptive fallback")
+        return None, "adaptive-fallback"
 
 INSERT_PREDICTION = text("""
     INSERT INTO predictions
@@ -50,12 +73,14 @@ GET_LATEST_SNAPSHOT = text("""
 
 
 def run():
-    # One detector instance per ticker — maintains rolling buffer
+    # Serve the registered champion model (shared across tickers); each
+    # detector still tracks its own per-ticker z-score from rolling features.
+    iso_model, model_version = load_champion_model()
     detectors: dict[str, HybridDetector] = {
-        ticker: HybridDetector() for ticker in cfg.tickers
+        ticker: HybridDetector(iso_model=iso_model) for ticker in cfg.tickers
     }
 
-    log.info(f"Detection loop started for {len(cfg.tickers)} tickers")
+    log.info(f"Detection loop started for {len(cfg.tickers)} tickers (model={model_version})")
 
     while True:
         for ticker in cfg.tickers:
@@ -85,7 +110,7 @@ def run():
                 # Log every prediction
                 session.execute(INSERT_PREDICTION, {
                     "snapshot_id":    snapshot_id,
-                    "model_version":  "v1.0.0",
+                    "model_version":  model_version,
                     "is_anomaly":     result.is_anomaly,
                     "confidence":     result.confidence,
                     "z_score":        result.z_score,

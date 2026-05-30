@@ -94,6 +94,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://postgres:password@postgres:5432/anomalydb
+      MLFLOW_TRACKING_URI: http://mlflow:5000
     depends_on:
       postgres:
         condition: service_healthy
@@ -123,6 +124,7 @@ services:
         --serve-artifacts
         --artifacts-destination /mlruns
         --host 0.0.0.0
+        --allowed-hosts localhost:5000,127.0.0.1:5000,mlflow:5000
     volumes:
       - mlruns:/mlruns
 

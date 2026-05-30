@@ -6,11 +6,14 @@ from datetime import datetime, timezone
 import mlflow
 import mlflow.sklearn
 import pandas as pd
+from mlflow import MlflowClient
 from sklearn.ensemble import IsolationForest
 from sqlalchemy import create_engine
 
 from config import cfg
 from features import FEATURE_COLS, build_features
+
+MODEL_NAME = "market-anomaly-iso-forest"
 
 # Windows consoles default to cp1252, which can't encode the emoji MLflow
 # prints in its "View run" message. Force UTF-8 so runs don't crash on exit.
@@ -89,8 +92,19 @@ def train(contamination: float = 0.05, n_estimators: int = 100):
         mlflow.sklearn.log_model(
             model,
             name="isolation_forest",
-            registered_model_name="market-anomaly-iso-forest",
+            registered_model_name=MODEL_NAME,
         )
+
+        # Promote this version to "champion" so the detection service serves it.
+        # In production this promotion would be gated on evaluate.py metrics.
+        client = MlflowClient()
+        versions = client.search_model_versions(
+            f"name='{MODEL_NAME}' and run_id='{run.info.run_id}'"
+        )
+        if versions:
+            version = versions[0].version
+            client.set_registered_model_alias(MODEL_NAME, "champion", version)
+            log.info(f"Promoted {MODEL_NAME} v{version} to @champion")
 
         log.info(f"Run complete: {run.info.run_id}")
         return run.info.run_id

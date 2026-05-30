@@ -32,11 +32,16 @@ class HybridDetector:
         z_threshold: float = None,
         iso_contamination: float = 0.05,
         min_samples_for_iso: int = 30,
+        iso_model: IsolationForest | None = None,
     ):
         self.z_threshold = z_threshold or cfg.z_score_threshold
         self.iso_contamination = iso_contamination
         self.min_samples_for_iso = min_samples_for_iso
-        self._iso_model: IsolationForest | None = None
+        # A model passed in (e.g. loaded from the MLflow registry) is served
+        # directly. Otherwise the detector adaptively self-fits as a cold-start
+        # fallback until a registered model becomes available.
+        self._iso_model: IsolationForest | None = iso_model
+        self._external_model: bool = iso_model is not None
         self._fit_data: list[list[float]] = []
 
     def _fit_isolation_forest(self, X: np.ndarray):
@@ -58,15 +63,24 @@ class HybridDetector:
         iso_score = 0.0
         iso_flag = False
         feature_row = [latest.get(c, 0.0) for c in FEATURE_COLS]
-        self._fit_data.append(feature_row)
 
-        if len(self._fit_data) >= self.min_samples_for_iso:
-            X = np.array(self._fit_data)
-            if len(self._fit_data) % 50 == 0 or self._iso_model is None:
-                self._fit_isolation_forest(X)
-            if self._iso_model is not None:
-                iso_score = float(self._iso_model.score_samples([feature_row])[0])
-                iso_flag = iso_score < -0.1
+        if self._external_model:
+            # Serve the registered model directly — no online refitting.
+            # Pass a named frame so feature names match how it was trained.
+            X_row = pd.DataFrame([feature_row], columns=FEATURE_COLS)
+            iso_score = float(self._iso_model.score_samples(X_row)[0])
+            iso_flag = bool(self._iso_model.predict(X_row)[0] == -1)
+        else:
+            # Cold-start fallback: adaptively fit a per-ticker model from the
+            # rolling buffer until a registered model is available.
+            self._fit_data.append(feature_row)
+            if len(self._fit_data) >= self.min_samples_for_iso:
+                X = np.array(self._fit_data)
+                if len(self._fit_data) % 50 == 0 or self._iso_model is None:
+                    self._fit_isolation_forest(X)
+                if self._iso_model is not None:
+                    iso_score = float(self._iso_model.score_samples([feature_row])[0])
+                    iso_flag = bool(self._iso_model.predict([feature_row])[0] == -1)
 
         is_anomaly = z_flag or iso_flag
         z_conf = min(abs(z) / (self.z_threshold * 2), 1.0)
