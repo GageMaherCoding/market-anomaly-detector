@@ -22,10 +22,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['equity', 'crypto']
+              values: ['equity', 'crypto']
       - name: short_term_trend
         tests:
           - accepted_values:
-              arguments:
-                values: ['above', 'below', 'at']
+              values: ['above', 'below', 'at']

@@ -22,8 +22,7 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['equity', 'crypto']
+              values: ['equity', 'crypto']
       - name: captured_at
         description: "UTC timestamp of capture"
         tests:
