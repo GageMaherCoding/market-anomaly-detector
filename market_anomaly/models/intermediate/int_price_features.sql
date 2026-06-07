@@ -87,6 +87,19 @@ with_lag as (
             rows between 20 preceding and 1 preceding
         )                                               as baseline_std,
 
+        -- volume baseline (excludes current row), mirrors the price baseline
+        avg(volume) over (
+            partition by ticker
+            order by captured_at
+            rows between 20 preceding and 1 preceding
+        )                                               as baseline_vol_mean,
+
+        stddev(volume) over (
+            partition by ticker
+            order by captured_at
+            rows between 20 preceding and 1 preceding
+        )                                               as baseline_vol_std,
+
         row_num
     from with_row_number
 ),
@@ -101,6 +114,15 @@ with_zscore as (
             )
             else 0
         end                                             as z_score,
+
+        -- volume z-score, mirrors the Python volume_z feature
+        case
+            when baseline_vol_std > 0
+            then round(
+                ((volume - baseline_vol_mean) / baseline_vol_std)::numeric, 4
+            )
+            else 0
+        end                                             as volume_z,
 
         -- trend direction: price above or below short-term mean
         case

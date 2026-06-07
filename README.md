@@ -16,17 +16,27 @@ dbt · MLflow · Grafana · Docker Compose
 ## Results
 
 Offline evaluation on a labeled benchmark, run with `python evaluate.py`. It
-builds seeded price series with injected shocks at known positions and scores
-them through the real detector:
+builds seeded price series and injects two kinds of anomaly: **point shocks**
+(sudden price jumps) and **contextual anomalies** (volume/liquidity surges that
+leave the price level untouched). Every point is scored through the real detector:
 
 | configuration | precision | recall | F1 |
 |---|---|---|---|
-| z-score only | 0.39 | 0.97 | 0.56 |
-| hybrid (z-score + Isolation Forest) | 0.18 | 1.00 | 0.31 |
+| z-score only | 0.42 | 0.55 | 0.48 |
+| hybrid (z-score + Isolation Forest) | **0.83** | **0.90** | **0.86** |
 
-The statistical signal alone is the more precise of the two. The hybrid trades
-precision for perfect recall, since the Isolation Forest casts a broader,
-noisier net. Metrics log to MLflow, and CI gates them against regression.
+| recall by anomaly kind | point shock | contextual |
+|---|---|---|
+| z-score only | 1.00 | 0.02 |
+| hybrid | 1.00 | 0.78 |
+
+The z-score alone catches every point shock but is blind to contextual anomalies,
+and it fires on ordinary drift often enough to be imprecise. The hybrid wins on
+both fronts. Requiring the Isolation Forest to confirm a z-score trip discards the
+z-score's standalone false positives (precision 0.42 → 0.83), and a volume-gated
+solo signal lets the forest catch the contextual anomalies the z-score cannot see
+(contextual recall 0.02 → 0.78). Metrics log to MLflow, and CI gates the hybrid's
+F1 against the baseline so the result cannot silently regress.
 
 ## Quickstart
 
@@ -73,6 +83,12 @@ python train.py            # train + register a model (promoted to @champion)
 python evaluate.py         # score on a labeled benchmark, log metrics to MLflow
 python drift_detector.py   # one-off drift check
 ```
+
+On a fresh `docker compose up` no champion exists yet, so the detector serves an
+adaptive per-ticker Isolation Forest as a fallback. Once enough snapshots have
+accumulated, run `python train.py` to register and promote a champion; the
+detection loop picks it up live (it re-checks the registry every
+`CHAMPION_RELOAD_CYCLES` cycles, default 60) without a restart.
 
 ## dbt (analytics layer)
 

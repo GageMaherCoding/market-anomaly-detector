@@ -39,6 +39,13 @@ def build_features(df: pd.DataFrame, window: int = 20) -> pd.DataFrame:
     baseline_std  = df["rolling_std"].shift(1)
     df["z_score"] = (df["price"] - baseline_mean) / baseline_std.replace(0, 1e-9)
 
+    # Volume z-score, built the same baseline-excluded way. This is the signal
+    # the price z-score cannot see: it flags volume/liquidity surges even when the
+    # price level itself stays inside its normal band (contextual anomalies).
+    vol_mean = df["volume"].rolling(window, min_periods=3).mean().shift(1)
+    vol_std  = df["volume"].rolling(window, min_periods=3).std().shift(1)
+    df["volume_z"] = ((df["volume"] - vol_mean) / vol_std.replace(0, 1e-9)).fillna(0.0)
+
     df["high_low_range"] = df["day_high"] - df["day_low"]
 
     # Set index for time-based rolling, then reset
@@ -60,6 +67,7 @@ FEATURE_COLS = [
     "rolling_mean",
     "rolling_std",
     "z_score",
+    "volume_z",
     "high_low_range",
     "move_count_1h",
 ]

@@ -41,7 +41,15 @@ def fetch_price(ticker: str) -> PriceEvent | None:
             ticker=ticker,
             asset_type=classify(ticker),
             price=float(price),
-            volume=float(getattr(data, "three_month_average_volume", 0) or 0),
+            # Real-time traded volume. Falls back to the 10-day average only when
+            # the live value is missing (e.g. market closed). The earlier code
+            # stored three_month_average_volume, a near-constant figure, which
+            # made every volume-based feature inert.
+            volume=float(
+                getattr(data, "last_volume", None)
+                or getattr(data, "ten_day_average_volume", 0)
+                or 0
+            ),
             prev_close=float(getattr(data, "previous_close", 0) or 0),
             day_high=float(getattr(data, "day_high", 0) or 0),
             day_low=float(getattr(data, "day_low", 0) or 0),

@@ -30,13 +30,23 @@ class HybridDetector:
     def __init__(
         self,
         z_threshold: float = None,
-        iso_contamination: float = 0.05,
+        iso_contamination: float = 0.03,
         min_samples_for_iso: int = 30,
+        huge_move_mult: float = 1.6,
+        vol_z_gate: float = 3.0,
         iso_model: IsolationForest | None = None,
     ):
         self.z_threshold = z_threshold or cfg.z_score_threshold
         self.iso_contamination = iso_contamination
         self.min_samples_for_iso = min_samples_for_iso
+        # A price move this many z-thresholds large is flagged outright, with no
+        # need for the Isolation Forest to confirm it.
+        self.huge_move_mult = huge_move_mult
+        # The Isolation Forest may raise an alarm on its own only when it also
+        # sees a volume/liquidity dislocation this large (|volume_z|). That scopes
+        # its solo authority to the contextual anomalies the price z-score cannot
+        # see, instead of letting it flag every price wobble.
+        self.vol_z_gate = vol_z_gate
         # A model passed in (e.g. loaded from the MLflow registry) is served
         # directly. Otherwise the detector adaptively self-fits as a cold-start
         # fallback until a registered model becomes available.
@@ -82,16 +92,34 @@ class HybridDetector:
                     iso_score = float(self._iso_model.score_samples([feature_row])[0])
                     iso_flag = bool(self._iso_model.predict([feature_row])[0] == -1)
 
-        is_anomaly = z_flag or iso_flag
+        vol_z = float(latest.get("volume_z", 0.0))
+        iso_active = self._iso_model is not None
+
         z_conf = min(abs(z) / (self.z_threshold * 2), 1.0)
-        iso_conf = max(0, min((-iso_score) / 0.3, 1.0)) if iso_score != 0 else 0.0
-        confidence = round((z_conf * 0.6 + iso_conf * 0.4) if is_anomaly else 0.0, 4)
+        # score_samples sits roughly in [-0.7, -0.5]; map "how far below ~-0.5"
+        # into a 0..1 severity used only for the reported confidence.
+        iso_sev = max(0.0, min((-iso_score - 0.5) / 0.2, 1.0)) if iso_score != 0 else 0.0
+
+        # Fusion — the two detectors play distinct, complementary roles:
+        #   * huge_move      : an outsized price move is an anomaly outright.
+        #   * confirmed_price: an ordinary z-score trip is trusted only when the
+        #                      Isolation Forest agrees, which discards the
+        #                      z-score's standalone false positives (the precision
+        #                      win). With no IF yet (cold start) z stands alone.
+        #   * contextual     : the IF escalates on its own only alongside a real
+        #                      volume/liquidity dislocation (|volume_z| >= gate) —
+        #                      the anomalies the price z-score cannot see.
+        huge_move = abs(z) >= self.z_threshold * self.huge_move_mult
+        confirmed_price = z_flag and (iso_flag or not iso_active)
+        contextual = iso_flag and abs(vol_z) >= self.vol_z_gate
+        is_anomaly = huge_move or confirmed_price or contextual
+        confidence = round((z_conf * 0.6 + iso_sev * 0.4) if is_anomaly else 0.0, 4)
 
         reasons = []
-        if z_flag:
+        if huge_move or confirmed_price:
             reasons.append(f"z-score={z:.2f}")
-        if iso_flag:
-            reasons.append(f"iso-score={iso_score:.4f}")
+        if contextual:
+            reasons.append(f"iso={iso_score:.3f} vol_z={vol_z:.2f}")
         reason = " | ".join(reasons) if reasons else "no anomaly"
 
         return AnomalyResult(

@@ -8,7 +8,7 @@ import mlflow.sklearn
 import pandas as pd
 from mlflow import MlflowClient
 from sklearn.ensemble import IsolationForest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from config import cfg
 from features import FEATURE_COLS, build_features
@@ -38,6 +38,28 @@ def load_training_data() -> pd.DataFrame:
     return df
 
 
+def record_model_version(version_tag: str, run_id: str):
+    """Record the promoted model in the model_versions table (DB-side lineage).
+
+    The MLflow registry is the source of truth; this gives the application
+    database its own audit row tying the active version to its MLflow run.
+    Best-effort: a DB hiccup must never fail a training run.
+    """
+    try:
+        engine = create_engine(cfg.db.url)
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE model_versions SET is_active = FALSE"))
+            conn.execute(text("""
+                INSERT INTO model_versions (version_tag, mlflow_run_id, is_active)
+                VALUES (:tag, :run_id, TRUE)
+                ON CONFLICT (version_tag) DO UPDATE
+                    SET mlflow_run_id = EXCLUDED.mlflow_run_id, is_active = TRUE
+            """), {"tag": version_tag, "run_id": run_id})
+        log.info(f"Recorded model_versions row for {version_tag}")
+    except Exception as e:
+        log.warning(f"Could not record model_versions row: {e}")
+
+
 def build_all_features(raw: pd.DataFrame) -> pd.DataFrame:
     frames = []
     for ticker, group in raw.groupby("ticker"):
@@ -49,7 +71,7 @@ def build_all_features(raw: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
-def train(contamination: float = 0.05, n_estimators: int = 100):
+def train(contamination: float = 0.03, n_estimators: int = 200):
     mlflow.set_experiment("market-anomaly-detection")
 
     with mlflow.start_run() as run:
@@ -105,6 +127,7 @@ def train(contamination: float = 0.05, n_estimators: int = 100):
             version = versions[0].version
             client.set_registered_model_alias(MODEL_NAME, "champion", version)
             log.info(f"Promoted {MODEL_NAME} v{version} to @champion")
+            record_model_version(f"{MODEL_NAME}:v{version}", run.info.run_id)
 
         log.info(f"Run complete: {run.info.run_id}")
         return run.info.run_id

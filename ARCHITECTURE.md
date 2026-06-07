@@ -83,22 +83,36 @@ and monitored model, analytics, and observability.
 
 ## 6. The detection model
 
-A two-signal hybrid, chosen so the system catches both kinds of anomaly:
+A two-signal hybrid in which the detectors play distinct, complementary roles
+rather than simply voting:
 
 - **Z-score (statistical).** Flags when the latest price is ≥ `2.5` standard
-  deviations from its 20-period rolling mean. Catches sharp, obvious spikes
-  immediately, even with little history.
-- **Isolation Forest (unsupervised ML).** Trained on the 7-dimensional feature
-  vector (deltas, rolling stats, range, intra-hour movement count) and served
-  from the MLflow registry. Catches multivariate anomalies a single z-score
-  misses, flagging via the model's contamination-calibrated decision boundary
-  (`predict() == -1`). On a cold start, before a model is registered, each
-  detector self-fits a per-ticker forest as a fallback.
+  deviations from its 20-period rolling mean. Precise on sharp price shocks, but
+  on its own it also trips on ordinary drift and is blind to anomalies that do
+  not move the price level.
+- **Isolation Forest (unsupervised ML).** Trained on the 8-dimensional feature
+  vector (price deltas, rolling stats, a volume z-score, intraday range,
+  intra-hour movement count) and served from the MLflow registry. It reads the
+  signals the price z-score ignores — most importantly volume. On a cold start,
+  before a model is registered, each detector self-fits a per-ticker forest as a
+  fallback.
 
-An observation is anomalous if either signal fires. Confidence blends the two
-(`0.6 × z-confidence + 0.4 × iso-confidence`), so a point flagged by both ranks
-above one flagged by either alone. Each ticker gets its own detector instance,
-so AAPL's volatility profile never contaminates DOGE's.
+The two are fused by role, not by a blunt OR:
+
+1. **Outright.** A price move past `1.6 ×` the z-threshold is flagged on its own.
+2. **Confirmed price anomaly.** An ordinary z-score trip is trusted only when the
+   Isolation Forest agrees the point is unusual. Because the forest is trained on
+   clean data, it rejects the drift that crosses the z-threshold without being
+   genuinely anomalous — this is what removes the z-score's standalone false
+   positives and lifts precision.
+3. **Contextual anomaly.** The forest raises an alarm on its own only alongside a
+   real volume/liquidity dislocation (`|volume_z| ≥ 3`). That scopes its solo
+   authority to the anomalies the price z-score cannot see, instead of letting it
+   flag every price wobble.
+
+Confidence blends the two signals (`0.6 × z-confidence + 0.4 × iso-severity`).
+Each ticker gets its own detector instance, so AAPL's volatility profile never
+contaminates DOGE's.
 
 ## 7. MLOps
 
@@ -108,13 +122,17 @@ so AAPL's volatility profile never contaminates DOGE's.
   metadata store and proxied artifact serving, so its state stays isolated from
   the application database.
 - **Model serving (closed loop).** `train.py` promotes each new version to the
-  `@champion` alias; `detection_loop.py` loads
-  `models:/market-anomaly-iso-forest@champion` at startup and serves it across
-  all tickers, falling back to an adaptive per-ticker model if no champion is
-  registered yet. Each prediction records the served model version.
-- **Evaluation.** `evaluate.py` scores the detector on a labeled benchmark
-  (injected shocks at known positions) and reports precision/recall/F1 for the
-  statistical-only and hybrid configurations, logged to MLflow and gated in CI.
+  `@champion` alias and records it in the `model_versions` table; `detection_loop.py`
+  loads `models:/market-anomaly-iso-forest@champion` at startup, re-checks the
+  registry every `CHAMPION_RELOAD_CYCLES` cycles so a freshly promoted champion is
+  picked up without a restart, and falls back to an adaptive per-ticker model if no
+  champion is registered yet. Each prediction records the served model version.
+- **Evaluation.** `evaluate.py` scores the detector on a labeled benchmark with
+  two anomaly kinds — point price-shocks and contextual volume/liquidity surges —
+  and reports precision/recall/F1 plus per-kind recall for the statistical-only
+  and hybrid configurations. Results log to MLflow, and CI gates the hybrid's F1
+  above the z-score baseline, so the hybrid can never silently regress below its
+  own simpler component.
 - **Drift detection.** `drift_detector.py` computes PSI per feature between a
   baseline window and the recent window. PSI ≥ 0.1 warns; ≥ 0.2 is critical and
   triggers an email alert (when SMTP is configured) recommending a retrain.
@@ -190,5 +208,6 @@ sources (public.*) → stg_price_snapshots → int_price_features → mart_anoma
 - Schedule `dbt run` (CI cron) and repoint Grafana panels at the mart.
 - Gate `@champion` promotion on `evaluate.py` metrics (currently always-promote).
 - Use returns-based features; price-level z-scores are noisy on trending series.
-- Tune Isolation Forest contamination and scale features to lift hybrid precision.
+- Broaden the benchmark with more contextual anomaly types (price gaps, stale
+  quotes) and validate the fusion thresholds against live data.
 - Deploy the API publicly (Render/Cloud Run) for a shareable live URL.

@@ -98,6 +98,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      mlflow:
+        condition: service_started
 
   drift:
     build: .

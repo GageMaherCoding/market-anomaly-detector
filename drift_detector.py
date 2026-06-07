@@ -6,7 +6,7 @@ from email.mime.text import MIMEText
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from config import cfg
 from features import FEATURE_COLS, build_features
@@ -54,8 +54,14 @@ def run_drift_check():
     cutoff_ref  = datetime.now(timezone.utc) - timedelta(days=ref_age_days)
     cutoff_curr = datetime.now(timezone.utc) - timedelta(hours=curr_hours)
 
-    ref  = pd.read_sql(f"SELECT * FROM price_snapshots WHERE captured_at < '{cutoff_ref}'",  engine)
-    curr = pd.read_sql(f"SELECT * FROM price_snapshots WHERE captured_at >= '{cutoff_curr}'", engine)
+    ref = pd.read_sql(
+        text("SELECT * FROM price_snapshots WHERE captured_at < :cutoff"),
+        engine, params={"cutoff": cutoff_ref},
+    )
+    curr = pd.read_sql(
+        text("SELECT * FROM price_snapshots WHERE captured_at >= :cutoff"),
+        engine, params={"cutoff": cutoff_curr},
+    )
 
     if ref.empty or curr.empty:
         log.warning("Not enough data for drift check")

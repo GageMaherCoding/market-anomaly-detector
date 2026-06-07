@@ -27,6 +27,10 @@ log = logging.getLogger(__name__)
 mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000"))
 MODEL_NAME = "market-anomaly-iso-forest"
 
+# How often (in cycles) to re-check the registry for a newly promoted champion,
+# so running train.py takes effect without restarting the service.
+CHAMPION_RELOAD_CYCLES = int(os.getenv("CHAMPION_RELOAD_CYCLES", "60"))
+
 ENGINE  = create_engine(cfg.db.url, pool_size=cfg.db.pool_size)
 Session = sessionmaker(bind=ENGINE)
 
@@ -82,7 +86,18 @@ def run():
 
     log.info(f"Detection loop started for {len(cfg.tickers)} tickers (model={model_version})")
 
+    cycle = 0
     while True:
+        # Periodically pick up a newly promoted champion without a restart, so
+        # running train.py actually closes the loop. Rebuild detectors only when
+        # the served model version changes.
+        if cycle and cycle % CHAMPION_RELOAD_CYCLES == 0:
+            new_model, new_version = load_champion_model()
+            if new_version != model_version:
+                log.info(f"Champion changed {model_version} -> {new_version}; reloading detectors")
+                iso_model, model_version = new_model, new_version
+                detectors = {t: HybridDetector(iso_model=iso_model) for t in cfg.tickers}
+
         for ticker in cfg.tickers:
             session = Session()
             try:
@@ -155,6 +170,7 @@ def run():
 
         log.info(f"Cycle complete — sleeping {cfg.poll_interval_seconds}s")
         time.sleep(cfg.poll_interval_seconds)
+        cycle += 1
 
 
 if __name__ == "__main__":

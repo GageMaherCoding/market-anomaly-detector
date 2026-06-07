@@ -87,7 +87,7 @@ def get_anomalies(
         FROM price_movements
         WHERE flagged = TRUE
           AND detected_at >= :cutoff
-          AND move_pct >= :min_move
+          AND ABS(move_pct) >= :min_move
           {where_extra}
         ORDER BY detected_at DESC
         LIMIT 200
