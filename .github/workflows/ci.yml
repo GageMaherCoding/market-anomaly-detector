@@ -46,7 +46,11 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Install dbt
-        run: pip install "dbt-postgres>=1.9"
+        # Pin to the 1.9 line. dbt-postgres 1.10 pulls dbt-core 2.0 ("Fusion"),
+        # which dropped the Postgres adapter; its dependency marker also drags in
+        # a 2.0 pre-release. Upper bounds keep CI on the last Postgres-supporting
+        # release.
+        run: pip install "dbt-core>=1.9,<1.10" "dbt-postgres>=1.9,<1.10"
       - name: Install psql client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Apply schema and seed sample data

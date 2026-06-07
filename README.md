@@ -94,6 +94,7 @@ detection loop picks it up live (it re-checks the registry every
 
 ```bash
 cd market_anomaly
+pip install "dbt-postgres>=1.9,<1.10"   # 1.10+ moves to the Fusion engine, which drops Postgres
 dbt build                  # run models + data-quality tests
 dbt docs generate
 dbt docs serve --port 18080   # lineage graph (8080 is taken by the API)
