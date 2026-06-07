@@ -1,12 +1,12 @@
-# Architecture — Market Anomaly Detector
+# Architecture: Market Anomaly Detector
 
 ## 1. Overview
 
 A real-time pipeline that ingests live prices for 25 equities and crypto assets,
 scores every price movement for statistical anomalies with a hybrid model, and
-serves the results through a REST API and live dashboards. The full stack —
-ingestion, scoring, a versioned and monitored model, analytics, and
-observability — runs continuously from a single `docker compose up`.
+serves the results through a REST API and live dashboards. The full stack runs
+continuously from a single `docker compose up`: ingestion, scoring, a versioned
+and monitored model, analytics, and observability.
 
 ## 2. High-level diagram
 
@@ -45,7 +45,7 @@ observability — runs continuously from a single `docker compose up`.
 | Producer | `price_producer.py` | Polls yfinance every 60s for 25 tickers, publishes `PriceEvent`s to the Kafka topic `prices.raw` (keyed by ticker, gzip, `acks=all`). |
 | Consumer | `price_consumer.py` | Consumes `prices.raw` (manual offset commit) and persists each event into `price_snapshots`. |
 | Detector loop | `detection_loop.py` | Every 60s, pulls 48h of history per ticker, builds features, scores with a per-ticker `HybridDetector`, writes every prediction to `predictions` and flagged ones to `price_movements`. |
-| Detector model | `detector.py` | The `HybridDetector` — z-score + Isolation Forest (see §6). |
+| Detector model | `detector.py` | The `HybridDetector`, z-score + Isolation Forest (see §6). |
 | Features | `features.py` | Rolling-window feature engineering (z-score, deltas, ranges) shared by the loop, trainer, and drift checker. |
 | Trainer | `train.py` | Batch-trains an Isolation Forest on all collected features and logs params/metrics/model to MLflow, registering `market-anomaly-iso-forest`. |
 | Drift checker | `drift_detector.py` | Computes Population Stability Index (PSI) per feature between a baseline and recent window; alerts on critical drift. Runs hourly as the `drift` service. |
@@ -55,69 +55,69 @@ observability — runs continuously from a single `docker compose up`.
 
 ## 4. Data flow
 
-1. **Ingest** — `price_producer` fetches `last_price`, volume, prev close, day
+1. **Ingest.** `price_producer` fetches `last_price`, volume, prev close, day
    high/low per ticker and emits a JSON event to Kafka.
-2. **Persist** — `price_consumer` writes each event as a row in
+2. **Persist.** `price_consumer` writes each event as a row in
    `price_snapshots` (the immutable raw record).
-3. **Score** — `detection_loop` reads recent history, engineers features, and
+3. **Score.** `detection_loop` reads recent history, engineers features, and
    asks the `HybridDetector` whether the latest point is anomalous. Every score
    is logged to `predictions`; anomalies also land in `price_movements`.
-4. **Curate** — dbt transforms raw snapshots into a tested analytical mart.
-5. **Serve & observe** — the API exposes anomalies/predictions; Grafana
+4. **Curate.** dbt transforms raw snapshots into a tested analytical mart.
+5. **Serve and observe.** The API exposes anomalies and predictions; Grafana
    visualizes the live feed and anomaly history straight from Postgres.
-6. **Operate** — `train.py` versions models in MLflow; `drift_detector`
-   watches the input distribution and alerts when it shifts.
+6. **Operate.** `train.py` versions models in MLflow; `drift_detector` watches
+   the input distribution and alerts when it shifts.
 
 ## 5. Data model (`schema.sql`)
 
-- **`price_snapshots`** — immutable raw captures: `ticker`, `asset_type`,
+- **`price_snapshots`.** Immutable raw captures: `ticker`, `asset_type`,
   `price`, `volume`, `prev_close`, `day_high`, `day_low`, `captured_at`,
   `raw_payload` (JSONB). Indexed on `(ticker, captured_at DESC)`.
-- **`predictions`** — one row per scored snapshot: `is_anomaly`, `confidence`,
+- **`predictions`.** One row per scored snapshot: `is_anomaly`, `confidence`,
   `z_score`, `iso_score`, `model_version`, `input_features` (JSONB), FK to the
   snapshot. Indexed on `predicted_at DESC`.
-- **`price_movements`** — flagged anomalies only: `price_before/after`,
+- **`price_movements`.** Flagged anomalies only: `price_before/after`,
   `move_pct`, scores, `flagged`.
-- **`model_versions`** — registry bookkeeping: `version_tag`, `mlflow_run_id`,
+- **`model_versions`.** Registry bookkeeping: `version_tag`, `mlflow_run_id`,
   metrics, `is_active`.
 
 ## 6. The detection model
 
-A **two-signal hybrid**, chosen so the system catches both kinds of anomaly:
+A two-signal hybrid, chosen so the system catches both kinds of anomaly:
 
-- **Z-score (statistical)** — flags when the latest price is ≥ `2.5` standard
+- **Z-score (statistical).** Flags when the latest price is ≥ `2.5` standard
   deviations from its 20-period rolling mean. Catches sharp, obvious spikes
   immediately, even with little history.
-- **Isolation Forest (unsupervised ML)** — trained on the 7-dimensional feature
+- **Isolation Forest (unsupervised ML).** Trained on the 7-dimensional feature
   vector (deltas, rolling stats, range, intra-hour movement count) and served
-  from the MLflow registry. Catches *multivariate* anomalies a single z-score
-  misses; flags using the model's contamination-calibrated decision boundary
+  from the MLflow registry. Catches multivariate anomalies a single z-score
+  misses, flagging via the model's contamination-calibrated decision boundary
   (`predict() == -1`). On a cold start, before a model is registered, each
   detector self-fits a per-ticker forest as a fallback.
 
-An observation is anomalous if **either** signal fires. Confidence blends the
-two (`0.6 × z-confidence + 0.4 × iso-confidence`) so a point flagged by both
-ranks above one flagged by either alone. Each ticker gets its own detector
-instance, so AAPL's volatility profile never contaminates DOGE's.
+An observation is anomalous if either signal fires. Confidence blends the two
+(`0.6 × z-confidence + 0.4 × iso-confidence`), so a point flagged by both ranks
+above one flagged by either alone. Each ticker gets its own detector instance,
+so AAPL's volatility profile never contaminates DOGE's.
 
 ## 7. MLOps
 
-- **Experiment tracking & registry** — `train.py` logs every run (params,
-  `flag_rate`, score statistics, the serialized model) to **MLflow**, and
-  registers versioned models under `market-anomaly-iso-forest`. MLflow uses a
-  SQLite metadata store and proxied artifact serving, so its state is fully
-  isolated from the application database.
-- **Model serving (closed loop)** — `train.py` promotes each new version to the
+- **Experiment tracking and registry.** `train.py` logs every run (params,
+  `flag_rate`, score statistics, the serialized model) to MLflow, and registers
+  versioned models under `market-anomaly-iso-forest`. MLflow uses a SQLite
+  metadata store and proxied artifact serving, so its state stays isolated from
+  the application database.
+- **Model serving (closed loop).** `train.py` promotes each new version to the
   `@champion` alias; `detection_loop.py` loads
   `models:/market-anomaly-iso-forest@champion` at startup and serves it across
   all tickers, falling back to an adaptive per-ticker model if no champion is
   registered yet. Each prediction records the served model version.
-- **Evaluation** — `evaluate.py` scores the detector on a labeled benchmark
+- **Evaluation.** `evaluate.py` scores the detector on a labeled benchmark
   (injected shocks at known positions) and reports precision/recall/F1 for the
   statistical-only and hybrid configurations, logged to MLflow and gated in CI.
-- **Drift detection** — `drift_detector.py` computes **PSI** per feature between
-  a baseline window and the recent window. PSI ≥ 0.1 warns, ≥ 0.2 is critical
-  and triggers an email alert (when SMTP is configured) recommending a retrain.
+- **Drift detection.** `drift_detector.py` computes PSI per feature between a
+  baseline window and the recent window. PSI ≥ 0.1 warns; ≥ 0.2 is critical and
+  triggers an email alert (when SMTP is configured) recommending a retrain.
 
 ## 8. Analytics layer (dbt)
 
@@ -128,67 +128,67 @@ sources (public.*) → stg_price_snapshots → int_price_features → mart_anoma
         (view)                (view)              (table)
 ```
 
-- **staging** — type-casts and normalizes raw snapshots, derives `asset_class`.
-- **intermediate** — rolling features (z-score, deltas, moving averages) in SQL,
+- **staging.** Type-casts and normalizes raw snapshots, derives `asset_class`.
+- **intermediate.** Rolling features (z-score, deltas, moving averages) in SQL,
   mirroring the Python feature logic.
-- **mart** — joins features with prediction history into the analytical table.
+- **mart.** Joins features with prediction history into the analytical table.
 
 29 dbt tests (`not_null`, `unique`, `accepted_values`) enforce data quality, and
 `dbt docs` generates a browsable lineage graph.
 
-## 9. Infrastructure & CI
+## 9. Infrastructure and CI
 
 - **Docker Compose** orchestrates 10 services (Postgres, Zookeeper, Kafka,
   producer, consumer, detector, drift, API, MLflow, Grafana). All carry
-  `restart: unless-stopped` so the stack is genuinely always-on.
-- **Grafana provisioning** — the datasource and both dashboards are committed as
-  YAML/JSON and load automatically; nothing is configured by hand.
-- **CI** (`.github/workflows/ci.yml`) runs on every push/PR:
-  - *Lint & unit tests* — `ruff` + `pytest` (DB-free core tests).
-  - *dbt build* — spins up Postgres, applies the schema, seeds sample data, and
-    runs the dbt models **and** their tests.
+  `restart: unless-stopped`, so the stack stays always-on.
+- **Grafana provisioning.** The datasource and both dashboards are committed as
+  YAML/JSON and load on their own; nothing is set up by hand.
+- **CI** (`.github/workflows/ci.yml`) runs on every push and PR:
+  - **Lint and unit tests.** `ruff` plus `pytest` (DB-free core tests).
+  - **dbt build.** Spins up Postgres, applies the schema, seeds sample data, and
+    runs the dbt models and their tests.
 
-## 10. Design decisions & trade-offs
+## 10. Design decisions and trade-offs
 
 - **Kafka for a single-node pipeline** is overkill for 25 tickers, but it makes
-  the ingestion/scoring boundary explicit and the design horizontally scalable —
-  the realistic shape of a production system.
+  the ingestion/scoring boundary explicit and the design horizontally scalable,
+  which is the realistic shape of a production system.
 - **Hybrid over a single model** trades a little complexity for robustness: the
   z-score gives an interpretable, instant signal; the forest covers the
   multivariate cases.
 - **Dashboards read raw tables, not the dbt mart.** Raw tables update every 60s,
-  so the dashboards are truly live. The mart is the *curated* layer and refreshes
-  on a `dbt run`; pointing BI at it is a deliberate next step paired with
-  scheduled refreshes.
-- **MLflow on SQLite, not Postgres.** The official image lacks `psycopg2`; SQLite
-  also keeps MLflow's internal schema out of the application database, which is
+  so the dashboards stay live. The mart is the curated layer and refreshes on a
+  `dbt run`; pointing BI at it is a deliberate next step paired with scheduled
+  refreshes.
+- **MLflow on SQLite, not Postgres.** The official image lacks `psycopg2`, and
+  SQLite keeps MLflow's internal schema out of the application database, which is
   cleaner separation of concerns.
 
 ## 11. Known limitations
 
 - **Not a trading signal.** It detects that a move is unusual, not its direction.
-  yfinance is delayed and polled at 60s — there is no tradeable edge here.
-- **Drift baseline is short.** Production would use a ~30-day baseline; it is
-  shortened here so the check is meaningful with a couple of weeks of data.
+  yfinance is delayed and polled at 60s, so there is no tradeable edge here.
+- **Drift baseline is short.** Production would use a roughly 30-day baseline;
+  this one is shortened so the check is meaningful with a couple weeks of data.
 - **In-memory detector state.** Each detector's Isolation Forest buffer resets on
   restart and re-warms from DB history; fine for this scale, not for HA.
-- **Single broker / single node.** No replication or partitioning tuning.
+- **Single broker, single node.** No replication or partitioning tuning.
 
 ## 12. Scaling considerations
 
-- **Ingestion** — swap polling for a push/websocket feed, partition Kafka topics
+- **Ingestion.** Swap polling for a push/websocket feed, partition Kafka topics
   by ticker, and run the consumer as a scaled group.
-- **Serving** — split scoring out of the loop into a stateless, autoscaled
-  service reading from a shared feature store (training/serving parity).
-- **Storage** — partition the snapshot table by time (or move to a time-series
+- **Serving.** Split scoring out of the loop into a stateless, autoscaled service
+  reading from a shared feature store (training/serving parity).
+- **Storage.** Partition the snapshot table by time (or move to a time-series
   store) and make the dbt mart incremental.
-- **Operations** — run the drift job on a real scheduler and route alerts to an
+- **Operations.** Run the drift job on a real scheduler and route alerts to an
   on-call tool rather than email.
 
-## 13. Stuff for future (?)
+## 13. Future work
 
 - Schedule `dbt run` (CI cron) and repoint Grafana panels at the mart.
 - Gate `@champion` promotion on `evaluate.py` metrics (currently always-promote).
-- Use returns-based features — price-level z-scores are noisy on trending series.
-- Tune Isolation Forest contamination / scale features to lift hybrid precision.
+- Use returns-based features; price-level z-scores are noisy on trending series.
+- Tune Isolation Forest contamination and scale features to lift hybrid precision.
 - Deploy the API publicly (Render/Cloud Run) for a shareable live URL.

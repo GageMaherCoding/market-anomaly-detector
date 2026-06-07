@@ -2,31 +2,31 @@
 
 Real-time anomaly detection on live market data. The system streams prices for
 25 equities and crypto assets, scores every movement with a hybrid
-statistical + ML model, and serves the results through a REST API and live
-Grafana dashboards — all continuously, from one `docker compose up`.
+statistical and ML model, and serves the results through a REST API and live
+Grafana dashboards. It all runs continuously from one `docker compose up`.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the design — data flow, the detection
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the design: data flow, the detection
 model, MLOps, and trade-offs.
 
 ## Stack
 
 Python · Kafka · PostgreSQL · scikit-learn (Isolation Forest) · FastAPI ·
-dbt · MLflow · Grafana · Docker Compose 
+dbt · MLflow · Grafana · Docker Compose
 
 ## Results
 
-Offline evaluation on a labeled benchmark (`python evaluate.py` — seeded price
-series with injected shocks at known positions, scored through the real
-detector):
+Offline evaluation on a labeled benchmark, run with `python evaluate.py`. It
+builds seeded price series with injected shocks at known positions and scores
+them through the real detector:
 
 | configuration | precision | recall | F1 |
 |---|---|---|---|
 | z-score only | 0.39 | 0.97 | 0.56 |
 | hybrid (z-score + Isolation Forest) | 0.18 | 1.00 | 0.31 |
 
-The statistical signal alone is the more precise of the two; the hybrid trades
-precision for perfect recall via the Isolation Forest's broader, noisier
-coverage. Metrics are logged to MLflow and gated in CI against regression.
+The statistical signal alone is the more precise of the two. The hybrid trades
+precision for perfect recall, since the Isolation Forest casts a broader,
+noisier net. Metrics log to MLflow, and CI gates them against regression.
 
 ## Quickstart
 
@@ -46,8 +46,8 @@ First run pulls images and takes a few minutes. Then everything is live:
 | Postgres | `localhost:5432` | db `anomalydb`, user/pass `postgres`/`password` |
 
 Pre-provisioned Grafana dashboards:
-- **Live Price Feed** — http://localhost:3000/d/price-feed
-- **Anomaly Monitor** — http://localhost:3000/d/anomaly-monitor
+- **Live Price Feed** at http://localhost:3000/d/price-feed
+- **Anomaly Monitor** at http://localhost:3000/d/anomaly-monitor
 
 Check data is flowing:
 
@@ -116,21 +116,21 @@ against a throwaway Postgres.
 
 ## Troubleshooting
 
-- **Containers show `(Paused)`** after a Docker Desktop restart →
+- **Containers show `(Paused)`** after a Docker Desktop restart: run
   `docker compose unpause`.
-- **Kafka "dependency failed to start / unhealthy"** on a bulk restart → it just
-  needs a few more seconds; re-run `docker compose up -d`.
-- **`train.py` UnicodeEncodeError on Windows** → already handled (the script
+- **Kafka "dependency failed to start / unhealthy"** on a bulk restart: it just
+  needs a few more seconds, so re-run `docker compose up -d`.
+- **`train.py` UnicodeEncodeError on Windows**: already handled (the script
   forces UTF-8 stdout); if running other scripts, set `PYTHONUTF8=1`.
 
 ## Deployment
 
 The API is container-ready for a free host (Render / Cloud Run). Point its
 `DATABASE_URL` at a managed Postgres and deploy the image built from
-`Dockerfile`. This gives a shareable public `/anomalies` URL. (Not yet wired —
+`Dockerfile`. This gives a shareable public `/anomalies` URL. (Not yet wired;
 see ARCHITECTURE.md §13.)
 
 ## Disclaimer
 
-This detects *unusual* price movements, not their direction, and is **not**
-trading advice or a signal.
+This flags unusual price movements, not their direction. It is **not** trading
+advice or a signal.
